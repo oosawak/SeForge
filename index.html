@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Game SE Forge</title>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg:#101216;
+  --panel:#191d24;
+  --panel2:#222833;
+  --line:#343b48;
+  --accent:#7bdcff;
+  --text:#f2f5f7;
+  --muted:#9ba7b4;
+}
+
+* {
+  box-sizing:border-box;
+}
+
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+header {
+  padding:18px;
+  border-bottom:1px solid var(--line);
+}
+
+header h1 {
+  margin:0;
+  font-size:22px;
+}
+
+header p {
+  margin:5px 0 0;
+  color:var(--muted);
+  font-size:13px;
+}
+
+main {
+  max-width:720px;
+  margin:auto;
+  padding:14px;
+}
+
+.card {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:14px;
+  margin-bottom:14px;
+}
+
+button {
+  border:0;
+  border-radius:12px;
+  padding:13px 16px;
+  font-size:15px;
+  font-weight:700;
+  background:var(--panel2);
+  color:var(--text);
+}
+
+button.primary {
+  background:var(--accent);
+  color:#071014;
+}
+
+button:disabled {
+  opacity:.4;
+}
+
+.row {
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.row button {
+  flex:1;
+}
+
+canvas {
+  width:100%;
+  height:120px;
+  background:#0b0d11;
+  border-radius:12px;
+  margin-top:12px;
+}
+
+label {
+  display:block;
+  margin-top:12px;
+  font-size:13px;
+  color:var(--muted);
+}
+
+input[type=range] {
+  width:100%;
+}
+
+.value {
+  float:right;
+  color:var(--accent);
+}
+
+.variant {
+  padding:12px;
+  background:var(--panel2);
+  border-radius:12px;
+  margin-top:8px;
+}
+
+.variant-title {
+  font-weight:700;
+  margin-bottom:8px;
+}
+
+.variant-actions {
+  display:flex;
+  gap:8px;
+}
+
+.variant-actions button {
+  flex:1;
+}
+
+.status {
+  margin-top:10px;
+  font-size:13px;
+  color:var(--muted);
+}
+
+.small {
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.5;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>🎙 Game SE Forge</h1>
+  <p>Record → Transform → Generate Game Sound Effects</p>
+</header>
+
+<main>
+
+<section class="card">
+
+  <div class="row">
+    <button id="recordBtn" class="primary">
+      ● 録音開始
+    </button>
+
+    <button id="stopBtn" disabled>
+      ■ 停止
+    </button>
+
+    <button id="playOriginalBtn" disabled>
+      ▶ 元音再生
+    </button>
+  </div>
+
+  <canvas id="waveform"
+          width="800"
+          height="200"></canvas>
+
+  <div id="status" class="status">
+    マイクから音を録音してください
+  </div>
+
+</section>
+
+
+<section class="card">
+
+  <h3>加工設定</h3>
+
+  <label>
+    Variation 強度
+    <span id="variationValue" class="value">50</span>
+  </label>
+
+  <input
+    id="variation"
+    type="range"
+    min="0"
+    max="100"
+    value="50">
+
+
+  <label>
+    Reverb
+    <span id="reverbValue" class="value">25</span>
+  </label>
+
+  <input
+    id="reverb"
+    type="range"
+    min="0"
+    max="100"
+    value="25">
+
+
+  <label>
+    Filter
+    <span id="filterValue" class="value">50</span>
+  </label>
+
+  <input
+    id="filter"
+    type="range"
+    min="0"
+    max="100"
+    value="50">
+
+
+  <button
+    id="generateBtn"
+    class="primary"
+    disabled
+    style="width:100%;margin-top:16px">
+
+    ✨ 8種類のSEを生成
+
+  </button>
+
+</section>
+
+
+<section class="card">
+
+  <h3>生成されたSE</h3>
+
+  <div id="variants">
+    <div class="small">
+      録音後にSEを生成してください。
+    </div>
+  </div>
+
+</section>
+
+
+<section class="card">
+
+  <div class="small">
+
+    音声処理はブラウザ内で行います。
+    録音した音声を外部サーバーへ送信する機能はありません。
+
+    <br><br>
+
+    基本的には自分で録音した音や、
+    加工・商用利用が許可された素材を使用してください。
+
+  </div>
+
+</section>
+
+</main>
+
+
+<script>
+
+let audioContext;
+
+let mediaRecorder;
+
+let recordedChunks = [];
+
+let sourceBuffer = null;
+
+let currentSource = null;
+
+
+/* --------------------------
+   AudioContext
+-------------------------- */
+
+function getAudioContext() {
+
+  if (!audioContext) {
+
+    audioContext =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )();
+
+  }
+
+  return audioContext;
+
+}
+
+
+/* --------------------------
+   Recording
+-------------------------- */
+
+const recordBtn =
+  document.getElementById("recordBtn");
+
+const stopBtn =
+  document.getElementById("stopBtn");
+
+const playOriginalBtn =
+  document.getElementById("playOriginalBtn");
+
+const generateBtn =
+  document.getElementById("generateBtn");
+
+const statusEl =
+  document.getElementById("status");
+
+
+recordBtn.onclick = async () => {
+
+  try {
+
+    getAudioContext();
+
+    const stream =
+      await navigator.mediaDevices.getUserMedia({
+        audio:{
+          echoCancellation:false,
+          noiseSuppression:false,
+          autoGainControl:false
+        }
+      });
+
+
+    recordedChunks = [];
+
+
+    mediaRecorder =
+      new MediaRecorder(stream);
+
+
+    mediaRecorder.ondataavailable = e => {
+
+      if (
+        e.data &&
+        e.data.size > 0
+      ) {
+
+        recordedChunks.push(e.data);
+
+      }
+
+    };
+
+
+    mediaRecorder.onstop = async () => {
+
+      const blob =
+        new Blob(recordedChunks);
+
+
+      const arrayBuffer =
+        await blob.arrayBuffer();
+
+
+      sourceBuffer =
+        await audioContext.decodeAudioData(
+          arrayBuffer.slice(0)
+        );
+
+
+      drawWaveform(sourceBuffer);
+
+
+      playOriginalBtn.disabled = false;
+
+      generateBtn.disabled = false;
+
+
+      statusEl.textContent =
+        "録音完了: " +
+        sourceBuffer.duration.toFixed(2) +
+        " 秒";
+
+
+      stream
+        .getTracks()
+        .forEach(track => track.stop());
+
+    };
+
+
+    mediaRecorder.start();
+
+
+    recordBtn.disabled = true;
+
+    stopBtn.disabled = false;
+
+
+    statusEl.textContent =
+      "● 録音中…";
+
+
+  }
+  catch(err) {
+
+    console.error(err);
+
+    statusEl.textContent =
+      "マイクを利用できません: " +
+      err.message;
+
+  }
+
+};
+
+
+stopBtn.onclick = () => {
+
+  if (
+    mediaRecorder &&
+    mediaRecorder.state !== "inactive"
+  ) {
+
+    mediaRecorder.stop();
+
+  }
+
+  recordBtn.disabled = false;
+
+  stopBtn.disabled = true;
+
+};
+
+
+/* --------------------------
+   Playback
+-------------------------- */
+
+function playBuffer(buffer) {
+
+  const ctx =
+    getAudioContext();
+
+
+  if (ctx.state === "suspended") {
+
+    ctx.resume();
+
+  }
+
+
+  if (currentSource) {
+
+    try {
+      currentSource.stop();
+    }
+    catch(e) {}
+
+  }
+
+
+  const src =
+    ctx.createBufferSource();
+
+
+  src.buffer = buffer;
+
+  src.connect(ctx.destination);
+
+  src.start();
+
+
+  currentSource = src;
+
+}
+
+
+playOriginalBtn.onclick = () => {
+
+  if (sourceBuffer) {
+
+    playBuffer(sourceBuffer);
+
+  }
+
+};
+
+
+/* --------------------------
+   Waveform
+-------------------------- */
+
+function drawWaveform(buffer) {
+
+  const canvas =
+    document.getElementById("waveform");
+
+  const ctx =
+    canvas.getContext("2d");
+
+
+  const width =
+    canvas.width;
+
+  const height =
+    canvas.height;
+
+
+  ctx.clearRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+
+  ctx.fillStyle =
+    "#0b0d11";
+
+  ctx.fillRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+
+  const data =
+    buffer.getChannelData(0);
+
+
+  const step =
+    Math.ceil(
+      data.length / width
+    );
+
+
+  const amp =
+    height / 2;
+
+
+  ctx.strokeStyle =
+    "#7bdcff";
+
+  ctx.lineWidth =
+    2;
+
+
+  ctx.beginPath();
+
+
+  for (
+    let x = 0;
+    x < width;
+    x++
+  ) {
+
+    let min = 1;
+
+    let max = -1;
+
+
+    for (
+      let j = 0;
+      j < step;
+      j++
+    ) {
+
+      const datum =
+        data[
+          x * step + j
+        ] || 0;
+
+
+      if (datum < min) min = datum;
+
+      if (datum > max) max = datum;
+
+    }
+
+
+    ctx.moveTo(
+      x,
+      (1 + min) * amp
+    );
+
+
+    ctx.lineTo(
+      x,
+      (1 + max) * amp
+    );
+
+  }
+
+
+  ctx.stroke();
+
+}
+
+
+/* --------------------------
+   Audio utilities
+-------------------------- */
+
+function cloneBuffer(buffer) {
+
+  const ctx =
+    getAudioContext();
+
+
+  const copy =
+    ctx.createBuffer(
+      buffer.numberOfChannels,
+      buffer.length,
+      buffer.sampleRate
+    );
+
+
+  for (
+    let ch = 0;
+    ch < buffer.numberOfChannels;
+    ch++
+  ) {
+
+    copy.copyToChannel(
+      buffer.getChannelData(ch),
+      ch
+    );
+
+  }
+
+
+  return copy;
+
+}
+
+
+/* Normalize */
+
+function normalizeBuffer(buffer) {
+
+  const result =
+    cloneBuffer(buffer);
+
+
+  let max = 0;
+
+
+  for (
+    let ch = 0;
+    ch < result.numberOfChannels;
+    ch++
+  ) {
+
+    const data =
+      result.getChannelData(ch);
+
+
+    for (
+      let i = 0;
+      i < data.length;
+      i++
+    ) {
+
+      max =
+        Math.max(
+          max,
+          Math.abs(data[i])
+        );
+
+    }
+
+  }
+
+
+  if (max === 0)
+    return result;
+
+
+  const gain =
+    0.95 / max;
+
+
+  for (
+    let ch = 0;
+    ch < result.numberOfChannels;
+    ch++
+  ) {
+
+    const data =
+      result.getChannelData(ch);
+
+
+    for (
+      let i = 0;
+      i < data.length;
+      i++
+    ) {
+
+      data[i] *= gain;
+
+    }
+
+  }
+
+
+  return result;
+
+}
+
+
+/* Reverse */
+
+function reverseBuffer(buffer) {
+
+  const result =
+    cloneBuffer(buffer);
+
+
+  for (
+    let ch = 0;
+    ch < result.numberOfChannels;
+    ch++
+  ) {
+
+    result
+      .getChannelData(ch)
+      .reverse();
+
+  }
+
+
+  return result;
+
+}
+
+
+/* Resample
+   pitch + speed change
+*/
+
+async function resample(
+  buffer,
+  rate
+) {
+
+  const length =
+    Math.ceil(
+      buffer.length / rate
+    );
+
+
+  const ctx =
+    new OfflineAudioContext(
+      buffer.numberOfChannels,
+      length,
+      buffer.sampleRate
+    );
+
+
+  const src =
+    ctx.createBufferSource();
+
+
+  src.buffer =
+    buffer;
+
+
+  src.playbackRate.value =
+    rate;
+
+
+  src.connect(
+    ctx.destination
+  );
+
+
+  src.start();
+
+
+  return await
+    ctx.startRendering();
+
+}
+
+
+/* Filter */
+
+async function filterBuffer(
+  buffer,
+  type,
+  frequency
+) {
+
+  const ctx =
+    new OfflineAudioContext(
+      buffer.numberOfChannels,
+      buffer.length,
+      buffer.sampleRate
+    );
+
+
+  const src =
+    ctx.createBufferSource();
+
+
+  const filter =
+    ctx.createBiquadFilter();
+
+
+  src.buffer =
+    buffer;
+
+
+  filter.type =
+    type;
+
+
+  filter.frequency.value =
+    frequency;
+
+
+  src.connect(filter);
+
+  filter.connect(
+    ctx.destination
+  );
+
+
+  src.start();
+
+
+  return await
+    ctx.startRendering();
+
+}
+
+
+/* Reverb impulse */
+
+function createImpulse(
+  ctx,
+  duration,
+  decay
+) {
+
+  const rate =
+    ctx.sampleRate;
+
+
+  const length =
+    rate * duration;
+
+
+  const impulse =
+    ctx.createBuffer(
+      2,
+      length,
+      rate
+    );
+
+
+  for (
+    let ch = 0;
+    ch < 2;
+    ch++
+  ) {
+
+    const data =
+      impulse.getChannelData(ch);
+
+
+    for (
+      let i = 0;
+      i < length;
+      i++
+    ) {
+
+      data[i] =
+        (
+          Math.random() * 2 - 1
+        )
+        *
+        Math.pow(
+          1 - i / length,
+          decay
+        );
+
+    }
+
+  }
+
+
+  return impulse;
+
+}
+
+
+/* Reverb */
+
+async function addReverb(
+  buffer,
+  amount = 0.3
+) {
+
+  const extra =
+    Math.floor(
+      buffer.sampleRate * 1.5
+    );
+
+
+  const ctx =
+    new OfflineAudioContext(
+      buffer.numberOfChannels,
+      buffer.length + extra,
+      buffer.sampleRate
+    );
+
+
+  const src =
+    ctx.createBufferSource();
+
+
+  const dry =
+    ctx.createGain();
+
+
+  const wet =
+    ctx.createGain();
+
+
+  const convolver =
+    ctx.createConvolver();
+
+
+  src.buffer =
+    buffer;
+
+
+  dry.gain.value =
+    1 - amount;
+
+
+  wet.gain.value =
+    amount;
+
+
+  convolver.buffer =
+    createImpulse(
+      ctx,
+      1.5,
+      2.5
+    );
+
+
+  src.connect(dry);
+
+  dry.connect(
+    ctx.destination
+  );
+
+
+  src.connect(
+    convolver
+  );
+
+
+  convolver.connect(wet);
+
+  wet.connect(
+    ctx.destination
+  );
+
+
+  src.start();
+
+
+  return await
+    ctx.startRendering();
+
+}
+
+
+/* --------------------------
+   Generate variants
+-------------------------- */
+
+generateBtn.onclick =
+async () => {
+
+  if (!sourceBuffer)
+    return;
+
+
+  generateBtn.disabled =
+    true;
+
+
+  statusEl.textContent =
+    "SEを生成中…";
+
+
+  const variation =
+    Number(
+      document
+        .getElementById("variation")
+        .value
+    )
+    / 100;
+
+
+  const reverb =
+    Number(
+      document
+        .getElementById("reverb")
+        .value
+    )
+    / 100;
+
+
+  const filterAmount =
+    Number(
+      document
+        .getElementById("filter")
+        .value
+    )
+    / 100;
+
+
+  const normal =
+    normalizeBuffer(
+      sourceBuffer
+    );
+
+
+  const variants = [];
+
+
+  variants.push({
+    name:"Clean",
+    buffer:normal
+  });
+
+
+  variants.push({
+    name:"Reverse",
+    buffer:
+      reverseBuffer(normal)
+  });
+
+
+  const highRate =
+    1.1 +
+    variation * 0.45;
+
+
+  const lowRate =
+    0.9 -
+    variation * 0.30;
+
+
+  variants.push({
+    name:"High",
+    buffer:
+      await resample(
+        normal,
+        highRate
+      )
+  });
+
+
+  variants.push({
+    name:"Heavy",
+    buffer:
+      await resample(
+        normal,
+        Math.max(
+          0.45,
+          lowRate
+        )
+      )
+  });
+
+
+  variants.push({
+    name:"Dark",
+    buffer:
+      await filterBuffer(
+        normal,
+        "lowpass",
+        800 +
+        2800 *
+        (1 - filterAmount)
+      )
+  });
+
+
+  variants.push({
+    name:"Thin",
+    buffer:
+      await filterBuffer(
+        normal,
+        "highpass",
+        300 +
+        1800 *
+        filterAmount
+      )
+  });
+
+
+  variants.push({
+    name:"Cave",
+    buffer:
+      await addReverb(
+        normal,
+        Math.min(
+          .75,
+          .15 +
+          reverb * .6
+        )
+      )
+  });
+
+
+  let fantasy =
+    await resample(
+      normal,
+      1.22
+    );
+
+
+  fantasy =
+    reverseBuffer(
+      fantasy
+    );
+
+
+  fantasy =
+    await addReverb(
+      fantasy,
+      .45
+    );
+
+
+  variants.push({
+    name:"Fantasy",
+    buffer:fantasy
+  });
+
+
+  renderVariants(
+    variants
+  );
+
+
+  statusEl.textContent =
+    "8種類のSEを生成しました";
+
+
+  generateBtn.disabled =
+    false;
+
+};
+
+
+/* --------------------------
+   UI variants
+-------------------------- */
+
+function renderVariants(
+  variants
+) {
+
+  const root =
+    document.getElementById(
+      "variants"
+    );
+
+
+  root.innerHTML = "";
+
+
+  variants.forEach(
+    (variant,index) => {
+
+      const el =
+        document.createElement(
+          "div"
+        );
+
+
+      el.className =
+        "variant";
+
+
+      const title =
+        document.createElement(
+          "div"
+        );
+
+
+      title.className =
+        "variant-title";
+
+
+      title.textContent =
+        String(index + 1)
+          .padStart(2,"0")
+        +
+        " "
+        +
+        variant.name;
+
+
+      const actions =
+        document.createElement(
+          "div"
+        );
+
+
+      actions.className =
+        "variant-actions";
+
+
+      const play =
+        document.createElement(
+          "button"
+        );
+
+
+      play.textContent =
+        "▶ 試聴";
+
+
+      play.onclick =
+        () =>
+          playBuffer(
+            variant.buffer
+          );
+
+
+      const save =
+        document.createElement(
+          "button"
+        );
+
+
+      save.textContent =
+        "💾 WAV";
+
+
+      save.onclick =
+        () =>
+          saveWav(
+            variant.buffer,
+            "se_" +
+            variant.name
+              .toLowerCase() +
+            ".wav"
+          );
+
+
+      actions.appendChild(play);
+
+      actions.appendChild(save);
+
+
+      el.appendChild(title);
+
+      el.appendChild(actions);
+
+
+      root.appendChild(el);
+
+    }
+  );
+
+}
+
+
+/* --------------------------
+   WAV export
+-------------------------- */
+
+function audioBufferToWav(
+  buffer
+) {
+
+  const channels =
+    buffer.numberOfChannels;
+
+
+  const sampleRate =
+    buffer.sampleRate;
+
+
+  const length =
+    buffer.length;
+
+
+  const bytesPerSample =
+    2;
+
+
+  const blockAlign =
+    channels *
+    bytesPerSample;
+
+
+  const arrayBuffer =
+    new ArrayBuffer(
+      44 +
+      length *
+      blockAlign
+    );
+
+
+  const view =
+    new DataView(
+      arrayBuffer
+    );
+
+
+  function writeString(
+    offset,
+    string
+  ) {
+
+    for (
+      let i = 0;
+      i < string.length;
+      i++
+    ) {
+
+      view.setUint8(
+        offset + i,
+        string.charCodeAt(i)
+      );
+
+    }
+
+  }
+
+
+  writeString(
+    0,
+    "RIFF"
+  );
+
+
+  view.setUint32(
+    4,
+    36 +
+    length *
+    blockAlign,
+    true
+  );
+
+
+  writeString(
+    8,
+    "WAVE"
+  );
+
+
+  writeString(
+    12,
+    "fmt "
+  );
+
+
+  view.setUint32(
+    16,
+    16,
+    true
+  );
+
+
+  view.setUint16(
+    20,
+    1,
+    true
+  );
+
+
+  view.setUint16(
+    22,
+    channels,
+    true
+  );
+
+
+  view.setUint32(
+    24,
+    sampleRate,
+    true
+  );
+
+
+  view.setUint32(
+    28,
+    sampleRate *
+    blockAlign,
+    true
+  );
+
+
+  view.setUint16(
+    32,
+    blockAlign,
+    true
+  );
+
+
+  view.setUint16(
+    34,
+    16,
+    true
+  );
+
+
+  writeString(
+    36,
+    "data"
+  );
+
+
+  view.setUint32(
+    40,
+    length *
+    blockAlign,
+    true
+  );
+
+
+  const channelData = [];
+
+
+  for (
+    let ch = 0;
+    ch < channels;
+    ch++
+  ) {
+
+    channelData.push(
+      buffer.getChannelData(ch)
+    );
+
+  }
+
+
+  let offset = 44;
+
+
+  for (
+    let i = 0;
+    i < length;
+    i++
+  ) {
+
+    for (
+      let ch = 0;
+      ch < channels;
+      ch++
+    ) {
+
+      let sample =
+        Math.max(
+          -1,
+          Math.min(
+            1,
+            channelData[ch][i]
+          )
+        );
+
+
+      sample =
+        sample < 0
+        ?
+        sample * 0x8000
+        :
+        sample * 0x7fff;
+
+
+      view.setInt16(
+        offset,
+        sample,
+        true
+      );
+
+
+      offset += 2;
+
+    }
+
+  }
+
+
+  return arrayBuffer;
+
+}
+
+
+function saveWav(
+  buffer,
+  filename
+) {
+
+  const wav =
+    audioBufferToWav(
+      buffer
+    );
+
+
+  const blob =
+    new Blob(
+      [wav],
+      {
+        type:"audio/wav"
+      }
+    );
+
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+
+  const a =
+    document.createElement(
+      "a"
+    );
+
+
+  a.href =
+    url;
+
+
+  a.download =
+    filename;
+
+
+  document.body
+    .appendChild(a);
+
+
+  a.click();
+
+
+  a.remove();
+
+
+  setTimeout(
+    () =>
+      URL.revokeObjectURL(url),
+    1000
+  );
+
+}
+
+
+/* --------------------------
+   Slider values
+-------------------------- */
+
+[
+  "variation",
+  "reverb",
+  "filter"
+]
+.forEach(id => {
+
+  const input =
+    document.getElementById(id);
+
+
+  const output =
+    document.getElementById(
+      id + "Value"
+    );
+
+
+  input.oninput =
+    () => {
+
+      output.textContent =
+        input.value;
+
+    };
+
+});
+
+</script>
+
+</body>
+</html>
